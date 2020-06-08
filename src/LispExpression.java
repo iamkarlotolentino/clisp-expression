@@ -5,54 +5,8 @@ import java.util.regex.Pattern;
 
 public class LispExpression {
 
-  /* Testing cases (uncomment only one)*/
-  // [ ARITHMETIC OPERATIONS ]
-  // => 10
-  // static String lispInput = "(+ 5 5)";
-  // => 0
-  //   static String lispInput = "(+ -5 5)";
-  // => 20
-//     static String lispInput = "(+ (+ 5 5) 5 5)";
-  // => 20
-//  static String lispInput = "(- (+ 10 10 10) (+ 5 5))";
-  // => -20
-//     static String lispInput = "(- (+ 5 5) (+ 10 10 10))";
-  // => -40
-     static String lispInput = "(+ (- (+ 5 5)) (- (+ 10 10 10)))";
-  // => -20
-  //   static String lispInput = "(+ (- 10) (- 10))";
-  // [ CAR ]
-  // => a
-  // static String lispInput = "(car '(a b c))";
-  // => 1
-  // static String lispInput = "(car '(1 2 3))";
-  // => b
-  // [ CDR ]
-  // => bb2 cc3
-  // static String lispInput = "(cdr '(aa1 bb2 cc3))";
-  // => 20 30
-  // static String lispInput = "(cdr '(10 20 30))";
-  // => c
-  // static String lispInput = "(cdr (cdr '(a b c)))";
-  // [ CAR + CDR ]
-  // => b
-  // static String lispInput = "(car (cdr '(a b c)))";
-  // => c
-  // static String lispInput = "(car (cdr (cdr '(a b c d e f))))";
-  // [ CAR + CDR + ARITHMETIC ]
-  // => 8
-  // static String lispInput = "(+ (car '(1 2 3)) 3 4 )";
-  // => 25
-  // static String lispInput = "(+ (car '(1 2 3)) (- 3 4) (* 5 5))";
-  // [ INVALID EXPRESSIONS ]
-  // => parentheses
-  // static String lispInput = "((+ 5 5)";
-  // => invalid
-  // static String lispInput = "(+ + 5 5)";
-  // => car after car
-  // static String lispInput = "(car (car (cdr '(a b c d e f))))";
-  // => cdr after car
-  // static String lispInput = "(cdr (car '(a b c d e f)))";
+  /* Input of CLisp expression */
+  public static String lispInput = "(+ 5 5)";
 
   /* Parsing variables */
   static LinkedList<String> lispInputList = new LinkedList<>();
@@ -66,7 +20,8 @@ public class LispExpression {
   static void putInputIntoList() {
     int parentheses = 0;
 
-    Pattern pattern = Pattern.compile("[()]|([a-zA-Z]|[-]?[0-9])+|['+\\-/*]");
+    Pattern pattern =
+        Pattern.compile("[()]|([a-zA-Z]+([0-9]+)?)|(([-]?[0-9]([.][0-9]+)?)+)|['+\\-/*]");
     Matcher matcher = pattern.matcher(lispInput);
 
     while (matcher.find()) {
@@ -89,7 +44,9 @@ public class LispExpression {
 
   static String[] s_expression() {
     if (nextToken.matches("[-+*/]")) {
-      return new String[] {String.valueOf(arithmetic_expr())};
+      float result = arithmetic_expr();
+      if (result % 1 == 0) return new String[] {String.valueOf(((int) result))};
+      else return new String[] {String.valueOf(result)};
     } else if (nextToken.matches("car|cdr")) {
       return car_cdr_expr();
     }
@@ -107,7 +64,7 @@ public class LispExpression {
       // Finally, closing section...
       if (right_paren()) {
         if (stack != null) {
-          if (stack.length < 2) error("Cannot have car after car. It should be a list.");
+          if (stack.length < 1) error("Cannot have car after car. It should be a list.");
           return new String[] {stack[0]};
         }
         return current;
@@ -159,38 +116,49 @@ public class LispExpression {
     return result.toString().split(" ");
   }
 
-  static int arithmetic_expr() {
+  static float arithmetic_expr() {
+    float result = 0;
+    int operandCount = 0;
     String operator = "";
-    StringBuilder total = new StringBuilder();
 
     if (currentToken.equals("(")) {
       if (arithmetic_keyword()) {
         operator = currentToken;
-        do {
-          if (integer()) {
-            total.append(currentToken).append(" ");
-          } else if (left_paren()) {
-            total.append(arithmetic_list(operator, s_expression())).append(" ");
-          } else if (right_paren()) {
-            return arithmetic_list(operator, total.toString().split(" "));
-          } else {
-            error("Expected token not found. Looking for list of numbers or parentheses.");
+
+        while (!right_paren()) {
+          // CASE: New expression
+          if (left_paren()) {
+            if (result == 0) result = arithmetic_list(operator, s_expression());
+            else
+              result = do_arithmetic(operator, result, arithmetic_list(operator, s_expression()));
+            operandCount++;
           }
-        } while (!right_paren());
+          // CASE: Integer
+          else if (integer()) {
+            if (result == 0) result = Float.parseFloat(currentToken);
+            else result = do_arithmetic(operator, result, Float.parseFloat(currentToken));
+            operandCount++;
+          } else {
+            error("Invalid arithmetic expression.");
+          }
+        }
       }
-    } else {
-      error("Arithmetic expression mismatched!");
     }
-    if (total.length() == 1 && operator.equals("-"))
-      return Integer.parseInt("-" + total.toString().split(" ")[0]);
-    return arithmetic_list(operator, total.toString().split(" "));
+
+    // CASE: Single operand in an expression
+    //       e.g. (-10) should be treated as negative 10.
+    if (operandCount == 1 && operator.equals("-")) result = Float.parseFloat("-" + result);
+
+    return result;
   }
 
-  static int arithmetic_list(String operator, String[] list) {
-    int total = 0;
+  static float arithmetic_list(String operator, String[] list) {
+    if (list.length == 1) return Float.parseFloat(list[0]);
+
+    float total = 0;
     for (String s : list) {
       if (s.isEmpty()) continue;
-      total = do_arithmetic(operator, total, Integer.parseInt(s));
+      total = do_arithmetic(operator, total, Float.parseFloat(s));
     }
     return total;
   }
@@ -212,7 +180,7 @@ public class LispExpression {
   }
 
   static boolean arithmetic_keyword() {
-    if (nextToken.matches("[-|+|*|/]")) {
+    if (nextToken.matches("[-+*/]")) {
       token();
       return true;
     }
@@ -220,7 +188,7 @@ public class LispExpression {
   }
 
   static boolean integer() {
-    if (nextToken.matches("[-]?[0-9]+")) {
+    if (nextToken.matches("([-]?[0-9]([.][0-9]+)?)+")) {
       token();
       return true;
     }
@@ -251,8 +219,7 @@ public class LispExpression {
     return false;
   }
 
-  static int do_arithmetic(String opr, int x, int y) {
-    if (x == 0) return y;
+  static float do_arithmetic(String opr, float x, float y) {
     if (opr.equals("+")) return x + y;
     if (opr.equals("-")) return x - y;
     if (opr.equals("*")) return x * y;
